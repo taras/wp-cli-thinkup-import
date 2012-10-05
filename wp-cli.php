@@ -104,9 +104,9 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
 
                             if ( $user ) {
 
-                                $user_option = '_thinkup_import_last_twitter_'.$username;
+                                $last_import_option_key = '_thinkup_import_last_twitter_'.$username;
 
-                                $from = get_option($user_option, 0);
+                                $from = get_option($last_import_option_key, 0);
 
                                 $posts = $postDAO->getPostsByUserInRange($user->user_id, 'twitter', $from,
                                     current_time('mysql'), 'pub_date', 'ASC', $iterator=false);
@@ -180,7 +180,7 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
 
         // update the last imported article
         if ( $posts && $post->pub_date != $from )
-            update_user_meta( $wpuser->ID, $user_option, $post->pub_date );
+            update_option( $last_import_option_key, $post->pub_date );
 
 
         $this->reset();
