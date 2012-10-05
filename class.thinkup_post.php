@@ -3,6 +3,12 @@ if ( !class_exists('Thinkup_Post') ) {
 
     class Thinkup_Post {
 
+        function __construct($wp_post) {
+
+            $this->links = get_post_meta($wp_post->ID, '_thinkup_links', true);
+
+        }
+
         // network that post came from ie. Twitter, Facebook Page
         var $network;
 

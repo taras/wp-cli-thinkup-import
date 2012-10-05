@@ -49,84 +49,138 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
 	 */
 	public function import( $args = array(), $assoc_args = array() ) {
 
-        if ( array_key_exists('at', $assoc_args) ) {
-            $at = $assoc_args['at'];
+        if ( array_key_exists('thinkup', $assoc_args) ) {
+            $thinkup = $assoc_args['thinkup'];
         } else {
-            $at = ABSPATH . 'thinkup';
+            $thinkup = ABSPATH . 'thinkup';
         }
 
-        $this->setup($at);
+        $this->setup($thinkup);
 
-        $users = get_users(array('blog_id'=>get_current_blog_id(), 'orderby'=>'email', 'role'=>'administrator'));
+        if ( array_key_exists('wpuser', $assoc_args) ) {
 
-        $ownersDAO = DAOFactory::getDAO('OwnerDAO');
-        $postsDAO = DAOFactory::getDAO('PostDAO');
-        $instancesDAO = DAOFactory::getDAO('InstanceDAO');
-        $hashtagDAO = DAOFactory::getDAO('HashtagDAO');
+            $wpuser = get_user_by('login', $assoc_args['wpuser']);
 
-        foreach ( $users as $user ) {
+            if ( !$wpuser ) {
 
-            $owner = $ownersDAO->getByEmail($user->user_email);
-            $instances = $instancesDAO->getByOwner($owner);
+                WP_CLI::error(sprintf('%s user was not found.', $assoc_args['wpuser']));
 
-            foreach ( $instances as $instance ) {
-                if ( $instance->is_active ) {
-                    $user_metafield_name = '_thinkup_import_last_'.sanitize_title($instance->network);
-
-                    // from metadata get data of last imported post
-                    $from = get_user_meta($user->ID, $user_metafield_name, true);
-                    if ( $from == '' ) $from = 0;
-
-                    $posts = $postsDAO->getPostsByUserInRange($instance->network_user_id, $instance->network, $from,
-                        current_time('mysql'), 'pub_date', 'ASC', $iterator=false);
-
-                    foreach ( $posts as $post ) {
-
-                        // skip last post
-                        if ( $post->pub_date == $from ) continue;
-
-                        $wp_post = array(
-                            # TODO: Change title to short status version of the title
-                            'post_title'=>sprintf('%s post by %s', $instance->network, $instance->network_username),
-                            'post_content'=>$post->post_text,
-                            'post_name'=>$post->post_id,
-                            'post_status' => 'draft',
-                            'post_date' => $post->pub_date,
-                            'post_author' => $user->ID,
-                            'post_type' => 'post',
-                            'post_category' => array(0)
-                        );
-                        $post_id = wp_insert_post($wp_post);
-
-                        if ( $post_id ) {
-
-                            add_post_meta($post_id, '_thinkup_post', $post->post_text);
-                            add_post_meta($post_id, '_thinkup_source', $instance->network);
-                            add_post_meta($post_id, '_thinkup_author_username', $post->author_username);
-                            add_post_meta($post_id, '_thinkup_author_fullname', $post->author_fullname);
-                            add_post_meta($post_id, '_thinkup_author_avatar', $post->author_avatar);
-                            add_post_meta($post_id, '_thinkup_post_id', $post->post_id, true);
-                            add_post_meta($post_id, '_thinkup_pending_processing', 'true');
-                            wp_set_post_terms( $post_id, array($instance->network), 'source' );
-                            set_post_format( $post_id , 'status');
-
-                        } else {
-
-                            WP_CLI::warning(sprintf("%s post could not created in WP.\nDebug Info:\n%s", $instance->network, print_r($wp_post, true)));
-
-                        }
-
-                    }
-
-                    // update the last imported article
-                    if ( $posts && $post->pub_date != $from )
-                        update_user_meta( $user->ID, $user_metafield_name, $post->pub_date );
-                }
             }
 
 
+        } else {
+
+            WP_CLI::error('You must specify wpuser to use for import. ie --wpuser=admin');
+            return;
 
         }
+
+        $posts = array();
+
+        switch ( $args[0] ) :
+            case 'twitter':
+                switch ( $args[1] ):
+                    case 'mentions':
+
+                        // check that user was specified
+                        if ( count($args) < 3 ) {
+
+                            WP_CLI::error('You must specify Twitter usernames (without @).');
+                            return;
+
+                        } else {
+
+                            $users = array_slice($args, 2);
+
+                        }
+
+                        $mentionDAO = DAOFactory::getDAO('MentionDAO');
+                        $userDAO = DAOFactory::getDAO('UserDAO');
+                        $postDAO = DAOFactory::getDAO('PostDAO');
+                        $linkDAO = DAOFactory::getDAO('LinkDAO');
+
+                        foreach ( $users as $username ) {
+                            $user = $userDAO->getUserByName($username, 'twitter');
+
+                            if ( $user ) {
+
+                                $user_option = '_thinkup_import_last_twitter_'.$username;
+
+                                $from = get_option($user_option, 0);
+
+                                $posts = $postDAO->getPostsByUserInRange($user->user_id, 'twitter', $from,
+                                    current_time('mysql'), 'pub_date', 'ASC', $iterator=false);
+
+                            } else {
+
+                                WP_CLI::warning('%s could not be found in Thinkup.', $username);
+
+                            }
+                        }
+
+                        break;
+                    default:
+                        WP_CLI::error('%s %s is not implemented', $args[0], $args[1]);
+                        return;
+                endswitch;
+            break;
+            default:
+                WP_CLI::error('%s is not implemented', $args[0]);
+        endswitch;
+
+        foreach ( $posts as $post ) {
+
+            // skip last post
+            if ( $post->pub_date == $from ) continue;
+
+            $wp_post = array(
+                # TODO: Change title to short status version of the title
+                'post_title'=>sprintf('%s post by %s', $post->network, $post->author_username),
+                'post_content'=>$post->post_text,
+                'post_name'=>$post->post_id,
+                'post_status' => 'draft',
+                'post_date' => $post->pub_date,
+                'post_author' => $wpuser->ID,
+                'post_type' => 'post',
+                'post_category' => array(0)
+            );
+            $post_id = wp_insert_post($wp_post);
+
+            if ( $post_id ) {
+
+                $links = $linkDAO->getLinksForPost($post->post_id, $post->network);
+                $ls = array();
+
+                foreach ($links as $link) {
+                    if ( $link->expanded_url ) {
+                        $ls[] = $link->expanded_url;
+                    } else {
+                        $ls[] = $link->url;
+                    }
+                }
+
+                add_post_meta($post_id, '_thinkup_links', $ls);
+                add_post_meta($post_id, '_thinkup_post', $post->post_text);
+                add_post_meta($post_id, '_thinkup_source', $post->network);
+                add_post_meta($post_id, '_thinkup_author_username', $post->author_username);
+                add_post_meta($post_id, '_thinkup_author_fullname', $post->author_fullname);
+                add_post_meta($post_id, '_thinkup_author_avatar', $post->author_avatar);
+                add_post_meta($post_id, '_thinkup_post_id', $post->post_id, true);
+                add_post_meta($post_id, '_thinkup_pending_processing', 'true');
+                wp_set_post_terms( $post_id, array($post->network), 'source' );
+                set_post_format( $post_id , 'status');
+
+            } else {
+
+                WP_CLI::warning(sprintf("%s post could not created in WP.\nDebug Info:\n%s", $post->network, print_r($wp_post, true)));
+
+            }
+
+        }
+
+        // update the last imported article
+        if ( $posts && $post->pub_date != $from )
+            update_user_meta( $wpuser->ID, $user_option, $post->pub_date );
 
 
         $this->reset();
@@ -143,7 +197,7 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
 
         foreach ( $wp_posts as $wp_post ) {
 
-            $tu_post = new Thinkup_Post();
+            $tu_post = new Thinkup_Post($wp_post);
             $tu_post->wp_post = $wp_post;
 
             $tu_post = apply_filters('thinkup_parse_original', $tu_post);
@@ -157,9 +211,23 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
 
                 $tu_post = apply_filters('thinkup_extract_images', $tu_post);
 
-                if ( $tu_post->images ) {
-                    foreach ( $images as $image ) {
+                if ( array_key_exists('opengraph', $tu_post->metadata) ) {
 
+                    $og = $tu_post->metadata['opengraph'];
+                    if ( array_key_exists('og:image', $og) && !empty($og['og:image']) ) {
+                        $tu_post->images[] = $og['og:image'];
+                    }
+                    if ( array_key_exists('og:description', $og) && !empty($og['og:description']) ) {
+                        $new_content['post_excerpt'] = $og['og:description'];
+                    }
+
+                }
+
+                if ( $tu_post->images ) {
+                    foreach ( $tu_post->images as $image_url ) {
+                        if ( is_wp_error($image = media_sideload_image($image_url, $tu_post->wp_post->ID)) ) {
+                            WP_CLI::warning($image);
+                        }
                     }
                 }
 
@@ -178,6 +246,8 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
                     wp_update_post($new_content);
                     set_post_format( $wp_post->ID , 'standard');
                 }
+
+                update_post_meta($wp_post->ID, '_thinkup_pending_processing', false );
 
             }
 

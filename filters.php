@@ -65,11 +65,21 @@ add_filter('thinkup_post_content', 'thinkup_readability_filter');
 function thinkup_extract_images_filter( $tu_post ) {
 
     // this is ugly but I broke up the string to not have to escape it
-    $regex = '<\s*?img\s+[^>]*?\s*src\s*=\s*(["'."'])((\\?+.)*?)\1[^>]*?>";
+    $regex = '/<img[^>]+>/i';
 
     if ( $tu_post->body && preg_match_all($regex, $tu_post->body, $matches) ) {
 
-        $tu_post->images = array_merge($tu_post->images, $matches[0]);
+        $matches = $matches[0];
+
+        foreach ( $matches as $match ) {
+
+            $regex = '/(src)=("[^"]*")/i';
+            if ( preg_match_all($regex, $match, $src, PREG_SET_ORDER) ) {
+                $src = $src[0];
+                $tu_post->images[] = trim($src[2], '"');
+            }
+
+        }
 
     }
 
@@ -95,7 +105,7 @@ function thinkup_extract_urls_filter ( $tu_post ) {
     return $tu_post;
 
 }
-add_filter('thinkup_parse_original', 'thinkup_extract_urls_filter');
+#add_filter('thinkup_parse_original', 'thinkup_extract_urls_filter');
 
 /**
  * Extact #hashtags from content and add them to tags
