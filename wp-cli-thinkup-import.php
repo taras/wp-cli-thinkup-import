@@ -45,6 +45,55 @@ function thinkup_import_init() {
 
     define( 'WP_CLI_THINKUP_IMPORT_PATH', plugin_dir_path(__FILE__) );
 
+    add_action( 'add_meta_boxes', 'thinkup_import_admin_metabox' );
+
+    $plugin_dir = basename(dirname(__FILE__));
+    load_plugin_textdomain( 'thinkup-import', false, $plugin_dir );
+
+}
+add_action('init', 'thinkup_import_init', 0);
+
+function thinkup_import_admin_metabox() {
+
+    add_meta_box(
+         'thinkup_import_metabox',
+         __( 'Thinkup Post Information', 'thinkup-import' ),
+         'thinkup_import_metabox_html',
+         'post'
+     );
+
 }
 
-add_action('init', 'thinkup_import_init', 0);
+function thinkup_import_metabox_html() {
+
+    $exclude = array('_thinkup_pending_processing');
+
+    $metadata = get_post_custom();
+
+    if ( $metadata ) {
+        print '<ul>';
+        foreach ( $metadata as $key => $value ) {
+
+            if ( in_array($key, $exclude) ) continue;
+
+            if ( strstr($key, '_thinkup') ) {
+                if ( is_array($value) ) $value = $value[0];
+                print '<li>';
+                if ( is_serialized($value) ) {
+                    $value = unserialize($value);
+                    print '<ul>';
+                    foreach ( $value as $v ) {
+                        printf('<li>%s: %s</li>', __($key), $v);
+                    }
+                    echo '</ul>';
+                } else {
+                    printf('%s: %s', __($key), $value);
+                }
+                print '</li>';
+            }
+
+        }
+        print '</ul>';
+    }
+
+}
