@@ -43,6 +43,8 @@ function thinkup_import_init() {
         'public' => true,
       ));
 
+    define( 'WP_CLI_THINKUP_IMPORT_PATH', plugin_dir_path(__FILE__) );
+
 }
 
 add_action('init', 'thinkup_import_init', 0);

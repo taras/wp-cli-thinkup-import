@@ -33,6 +33,8 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
         chdir($app_path);
         require_once 'init.php';
 
+       require_once WP_CLI_THINKUP_IMPORT_PATH . 'dao.php';
+
     }
 
     private function reset( ) {
@@ -95,20 +97,25 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
                         }
 
                         $mentionDAO = DAOFactory::getDAO('MentionDAO');
-                        $userDAO = DAOFactory::getDAO('UserDAO');
                         $postDAO = DAOFactory::getDAO('PostDAO');
                         $linkDAO = DAOFactory::getDAO('LinkDAO');
+                        $wppostDAO = new WordPressPostMySQLDAO();
 
                         foreach ( $users as $username ) {
-                            $user = $userDAO->getUserByName($username, 'twitter');
 
-                            if ( $user ) {
+                            $mention = $mentionDAO->getMentionInfoUserName($username, 'twitter');
+
+                            if ( $mention ) {
 
                                 $last_import_option_key = '_thinkup_import_last_twitter_'.$username;
 
-                                $from = get_option($last_import_option_key, 0);
+                                if ( $from = get_option($last_import_option_key, 0) ) {
+                                    if ( WP_DEBUG ) WP_CLI::line("Last import: $from");
+                                } else {
+                                    if ( WP_DEBUG) WP_CLI::line('First import');
+                                }
 
-                                $posts = $postDAO->getPostsByUserInRange($user->user_id, 'twitter', $from,
+                                $posts = $wppostDAO->getPostsByMentionIDInRange($mention['id'], 'twitter', $from,
                                     current_time('mysql'), 'pub_date', 'ASC', $iterator=false);
 
                             } else {
@@ -128,14 +135,27 @@ class ThinkUpApp_Import_Command extends WP_CLI_Command {
                 WP_CLI::error('%s is not implemented', $args[0]);
         endswitch;
 
-        foreach ( $posts as $post ) {
+        // skip first post if its same as last imported post
+        if ( $posts[0]->pub_date == $from ) array_shift($posts);
 
-            // skip last post
-            if ( $post->pub_date == $from ) continue;
+        if ( array_key_exists('show-only', $assoc_args) && $assoc_args['show-only'] == true ) {
+
+            foreach ( $posts as $post ) {
+
+                WP_CLI::line(sprintf('%s - %s', $post->pub_date, $post->post_text));
+
+            }
+
+            // exit and do nothing
+            return;
+
+        }
+
+        foreach ( $posts as $post ) {
 
             $wp_post = array(
                 # TODO: Change title to short status version of the title
-                'post_title'=>sprintf('%s post by %s', $post->network, $post->author_username),
+                'post_title'=>sprintf('%s post from %s', $post->network, $post->author_username),
                 'post_content'=>$post->post_text,
                 'post_name'=>$post->post_id,
                 'post_status' => 'draft',
